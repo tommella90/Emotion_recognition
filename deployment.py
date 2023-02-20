@@ -1,53 +1,76 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
+from deta import Drive
 from enum import Enum
 import tensorflow as tf
 import numpy as np
-import cv2 as cv
+from PIL import Image
+from io import BytesIO
+import cv2
 from tensorflow.keras import models, layers
 from tensorflow.keras.optimizers import Adam,SGD,RMSprop
 import matplotlib.pyplot as plt
 import os
 import uvicorn
 
-#%% 1) FASTAPI
-app = FastAPI()
 
-model = tf.keras.models.load_model("models/model2")
+#%%
 class_names = ['angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral']
+face_detector = cv2.CascadeClassifier('models/haarcascade_frontalface_default.xml')
 
-def preprocess_image(file, image_size=[48, 48]):
-    img = tf.io.read_file(file)
-    img = tf.image.decode_jpeg(img)
-    img = tf.image.resize(img, image_size)/255
-    #img = tf.image.rgb_to_grayscale(img)
-    return img
+with open('models/network_emotions.json', 'r') as json_file:
+    emo_model = json_file.read()
+network_loaded = tf.keras.models.model_from_json(emo_model)
+network_loaded.load_weights('models/weights_emotions.hdf5')
+network_loaded.compile(loss = 'categorical_crossentropy', optimizer='Adam', metrics=['accuracy'])
 
-def get_prediction(img):
-    pred = model.predict(img)
-    confidence = dict(zip(class_names, pred[0]))
-    class_index = np.argmax(confidence)
-    class_name = class_names[class_index]
-    return confidence
+def load_image(file):
+    image = cv2.imread(file)
+    return image
 
-#img = preprocess_image("prova2.jpg")
-#pred = get_prediction(img)
+def predict_emotion_from_image(image):
+    original_image = image.copy()
+    faces = face_detector.detectMultiScale(original_image, 1.1, 5)
+    for (x, y, w, h) in faces:
+        cv2.rectangle(original_image, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+    model_size = 48
+    roi = image[y:y+h, x:x+w]
+    roi = cv2.resize(roi, (model_size, model_size))
+    roi = roi/255
+    roi = np.expand_dims(roi, axis=0)
+    probs = network_loaded.predict(roi)
+    predicted = class_names[np.argmax(probs)]
+    return probs, predicted
+
+image = load_image("prova2.jpg")
+probs, predicted = predict_emotion_from_image(image)
+
 
 #%%
-def main(file):
-    img = preprocess_image(file)
-    return get_prediction(img)
+app = FastAPI()
+files = Drive("myfiles")
 
+
+@app.get("/allora")
+async def hello():
+    return "welcome"
+
+@app.post("/")
+def upload_image(file: UploadFile = File(...)):
+    return files.put(file.filename, file.file)
+
+@app.post("/api/predict_emotion")
+def predict_emotion(file: UploadFile = File(...) ):
+
+    image = load_image(file)
+    #predictions = predict_emotion_from_image(image)
+    return image
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, port=8888, host='127.0.0.1')
 
 #%%
-@app.get("/get_emotion_prediction/{file}")
-def get_prediction(img):
-    img = preprocess_image(f"{img}")
-    pred = get_prediction(img)
-    return pred
-
-# uvicorn fast_api_tutorial:app --reload
-
-
 
 #%% 2) TENSORFLOW SERVICE
 # docker pull tensorflow/serving
@@ -69,3 +92,4 @@ def get_prediction(img):
 """
 
 #go on http://localhost:8888/v1/models/model_test
+

@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras import models, layers
-from tensorflow.keras.optimizers import Adam,SGD,RMSprop
+from tensorflow.keras.optimizers import Adam, SGD, RMSprop
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
